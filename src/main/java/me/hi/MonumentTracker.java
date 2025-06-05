@@ -7,6 +7,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.util.Vector;
+import tc.oc.pgm.destroyable.DestroyableDestroyedEvent;
 import tc.oc.pgm.api.match.Match;
 import tc.oc.pgm.api.match.MatchManager;
 import tc.oc.pgm.api.player.MatchPlayer;
@@ -49,6 +50,24 @@ public class MonumentTracker implements Listener {
         MatchPlayer matchPlayer = match.getPlayer(event.getPlayer());
         if (matchPlayer != null) {
             updateCompass(matchPlayer);
+        }
+    }
+
+    // Update all players' compasses when a monument is destroyed
+    @EventHandler
+    public void onMonumentDestroyed(DestroyableDestroyedEvent event) {
+        Match match = event.getMatch();
+        if (match == null) return;
+
+        Destroyable destroyed = event.getDestroyable();
+        Team destroyedTeam = destroyed.getOwner(); // Team whose monument was destroyed
+
+        // For each player in the match, if they are on the opposite team, update their compass
+        for (MatchPlayer player : match.getPlayers()) {
+            Team playerTeam = (Team) player.getParty();
+            if (playerTeam != null && !playerTeam.isObserving() && playerTeam != destroyedTeam) {
+                updateCompass(player);
+            }
         }
     }
 
