@@ -5,6 +5,7 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 import tc.oc.pgm.api.match.Match;
 import tc.oc.pgm.api.player.MatchPlayer;
 import tc.oc.pgm.destroyable.DestroyableMatchModule;
+import tc.oc.pgm.destroyable.Destroyable;
 import tc.oc.pgm.teams.Team;
 import org.bukkit.Location;
 import org.bukkit.event.EventHandler;
@@ -18,12 +19,18 @@ public class MonumentTracker implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        updateCompass((MatchPlayer) event.getPlayer());
+        MatchPlayer matchPlayer = MatchPlayer.get(event.getPlayer());
+        if (matchPlayer != null) {
+            updateCompass(matchPlayer);
+        }
     }
 
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        updateCompass((MatchPlayer) event.getPlayer());
+        MatchPlayer matchPlayer = MatchPlayer.get(event.getPlayer());
+        if (matchPlayer != null) {
+            updateCompass(matchPlayer);
+        }
     }
 
     public void updateCompass(MatchPlayer player) {
@@ -35,10 +42,10 @@ public class MonumentTracker implements Listener {
         if (dtm == null) return;
 
         Team playerTeam = (Team) player.getParty();
-        if (playerTeam == null || playerTeam.isObserver()) return;
+        if (playerTeam == null || playerTeam.isObserving()) return;
 
         // Get all enemy monuments not yet destroyed
-        List<DestroyableMatchModule> enemyMonuments = dtm.getObjectives().stream()
+        List<Destroyable> enemyMonuments = dtm.getDestroyables().stream()
                 .filter(obj -> obj.getOwner() != null && obj.getOwner() != playerTeam)
                 .filter(obj -> !obj.isDestroyed())
                 .collect(Collectors.toList());
@@ -47,12 +54,12 @@ public class MonumentTracker implements Listener {
 
         // Find the closest monument
         Location playerLoc = player.getBukkit().getLocation();
-        DestroyableMatchModule closest = enemyMonuments.stream()
-                .min(Comparator.comparingDouble(obj -> obj.getLocation().distance(playerLoc)))
+        Destroyable closest = enemyMonuments.stream()
+                .min(Comparator.comparingDouble(obj -> obj.getBlockRegion().getCenter().distance(playerLoc)))
                 .orElse(null);
 
         if (closest != null) {
-            player.getBukkit().setCompassTarget(closest.getLocation());
+            player.getBukkit().setCompassTarget(closest.getBlockRegion().getCenter());
         }
     }
 }
