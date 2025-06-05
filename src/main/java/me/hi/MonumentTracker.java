@@ -8,23 +8,35 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.util.Vector;
 import tc.oc.pgm.api.match.Match;
+import tc.oc.pgm.api.match.MatchManager;
 import tc.oc.pgm.api.player.MatchPlayer;
 import tc.oc.pgm.destroyable.Destroyable;
 import tc.oc.pgm.destroyable.DestroyableMatchModule;
 import tc.oc.pgm.teams.Team;
 import tc.oc.pgm.regions.FiniteBlockRegion;
-import com.sk89q.worldedit.math.BlockVector3;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * MonumentTracker - Tracks enemy monuments for a player and updates their compass to point to the nearest one.
+ *
+ * Make sure to provide a MatchManager instance to the constructor when registering this listener.
+ */
 public class MonumentTracker implements Listener {
 
+    private final MatchManager matchManager;
+
+    public MonumentTracker(MatchManager matchManager) {
+        this.matchManager = matchManager;
+    }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        MatchPlayer matchPlayer = MatchPlayer.get(event.getPlayer());
+        Match match = matchManager.getMatch(event.getPlayer().getWorld());
+        if (match == null) return;
+        MatchPlayer matchPlayer = match.getPlayer(event.getPlayer());
         if (matchPlayer != null) {
             updateCompass(matchPlayer);
         }
@@ -32,7 +44,9 @@ public class MonumentTracker implements Listener {
 
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        MatchPlayer matchPlayer = MatchPlayer.get(event.getPlayer());
+        Match match = matchManager.getMatch(event.getPlayer().getWorld());
+        if (match == null) return;
+        MatchPlayer matchPlayer = match.getPlayer(event.getPlayer());
         if (matchPlayer != null) {
             updateCompass(matchPlayer);
         }
@@ -60,12 +74,13 @@ public class MonumentTracker implements Listener {
 
         // Find the closest monument
         Location playerLoc = player.getBukkit().getLocation();
+        World world = playerLoc.getWorld();
         Destroyable closest = enemyMonuments.stream()
-                .min(Comparator.comparingDouble(obj -> getRegionCenter(obj.getBlockRegion(), playerLoc.getWorld()).distance(playerLoc)))
+                .min(Comparator.comparingDouble(obj -> getRegionCenter(obj.getBlockRegion(), world).distance(playerLoc)))
                 .orElse(null);
 
         if (closest != null) {
-            player.getBukkit().setCompassTarget(getRegionCenter(closest.getBlockRegion(), playerLoc.getWorld()));
+            player.getBukkit().setCompassTarget(getRegionCenter(closest.getBlockRegion(), world));
         }
     }
 
@@ -78,4 +93,4 @@ public class MonumentTracker implements Listener {
         double centerZ = (min.getBlockZ() + max.getBlockZ()) / 2.0 + 0.5;
         return new Location(world, centerX, centerY, centerZ);
     }
-    }
+}
