@@ -24,8 +24,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>21</source>
+                    <target>21</target><compilerArgs>--enable-preview</compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -45,7 +45,9 @@
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
-                <filtering>true</filtering>
+                <excludes>
+                    <exclude>**/*.jar</exclude>
+                </excludes>
             </resource>
         </resources>
     </build>
@@ -70,9 +72,11 @@
         </dependency>
         <dependency>
             <groupId>tc.oc.pgm</groupId>
-            <artifactId>util</artifactId>
-            <version>0.16-SNAPSHOT</version>
-            <scope>provided</scope>
+            <artifactId>pgm</artifactId>
+            <version>0.16-SNAPSHOT</version> <!-- Or the version your server uses -->
+            <scope>system</scope>
+            <systemPath>${project.basedir}/src/main/resources/PGM.jar</systemPath>
+            <type>jar</type>
         </dependency>
     </dependencies>
 </project>
