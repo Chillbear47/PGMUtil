@@ -1,0 +1,58 @@
+<map proto="1.5.0">
+    <name>BrovilleUHC</name>
+    <version>1.0.1</version>
+    <objective>Last man standing wins the game!</objective>
+    <game>UHC</game>
+    <gamemode>blitz</gamemode>
+    <authors>
+        <author uuid="4512caf0-ae2b-4655-8580-e713fd6bc0ee"/> <!-- Oldshoes-->
+    </authors>
+    <broadcasts>
+        <alert after="1m">You can track players with a compass!</alert>
+    </broadcasts>
+    <players max="25"/>
+    <spawns>
+        <spawn spread="true">
+            <regions>
+                <point yaw="0">-863.5,73,1879.5</point>
+                <point yaw="0">-84.5,68,2258.5</point>
+                <point yaw="0">225.5,68,2035.5</point>
+                <point yaw="0">-691.5,65,2338.5</point>
+                <point yaw="0">-669.5,73,2038.5</point>
+                <point yaw="0">161.5,89,2372.5</point>
+                <point yaw="0">-86.5,86,1915.5</point>
+                <point yaw="0">-468.5,79,2284.5</point>
+                <point yaw="0">-553.5,77,1889.5</point>
+                <point yaw="0">121.5,75,2213.5</point>
+                <point yaw="0">39.5,73,2086.5</point>
+                <point yaw="0">-524.5,93,2104.5</point>
+                <point yaw="0">-396.5,71,1951.5</point>
+                <point yaw="0">-982.5,85,2007.5</point>
+                <point yaw="0">-981.5,70,1831.5</point>
+                <point yaw="0">-686.5,69,1807.5</point>
+                <point yaw="0">-716.5,68,2207.5</point>
+                <point yaw="0">-229.5,106,1900.5</point>
+                <point yaw="0">-273.5,73,2100.5</point>
+                <point yaw="0">-835.5,69,2104.5</point>
+                <point yaw="0">525.5,77,1942.5</point>
+                <point yaw="0">330.5,70,2168.5</point>
+                <point yaw="0">-931.5,65,2366.5</point>
+                <point yaw="0">-1142.5,80,2031.5</point>
+                <point yaw="0">675.5,68,1818.5</point>
+            </regions>
+        </spawn>
+        <default yaw="0">
+            <region>
+                <cylinder id="obs-spawn" base="-175.5,70,2121.5" radius="3" height="0"/>
+            </region>
+        </default>
+    </spawns>
+    <regions>
+        <apply block="deny(void)" message="You may not build blocks on the void!"/>
+    </regions>
+    <blitz/>
+    <gamerules>
+        <naturalRegeneration>false</naturalRegeneration>
+    </gamerules>
+    <maxbuildheight>256</maxbuildheight>
+</map>
