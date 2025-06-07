@@ -57,16 +57,13 @@ public class BlitzUHC implements Listener {
         borderManager = new BorderManager(minX, maxX, minZ, maxZ);
         BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
 
-        // Setup Bukkit WorldBorder as well
-        double centerX = (minX + maxX) / 2.0;
-        double centerZ = (minZ + maxZ) / 2.0;
-        double size = Math.max(maxX - minX, maxZ - minZ);
-        world.getWorldBorder().setCenter(centerX, centerZ);
-        world.getWorldBorder().setSize(size);
+        // Setup Bukkit WorldBorder as well (make it huge and out of the way to hide vanilla border visual)
+        world.getWorldBorder().setCenter(0, 0);
+        world.getWorldBorder().setSize(30000);
 
-        // Schedule border shrinking logic
+        // Schedule border shrinking logic (now using correct time-based phase changes)
         this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
-        borderShrinkTask.runTaskTimer(plugin, 20, 20);
+        borderShrinkTask.startShrinkPhase(0); // custom, see new class below
 
         // Register this for PlayerMoveEvent, if not already registered
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -95,7 +92,7 @@ public class BlitzUHC implements Listener {
             // Nudge player inside border
             Location nudgeLoc = borderManager.getSafeLocationInsideBorder(loc, 1);
             player.setVelocity(nudgeLoc.toVector().subtract(loc.toVector()).normalize().multiply(0.4));
-            player.sendMessage("§cYou are outside the border, nudging you back in!");
+            //player.sendMessage("§cYou are outside the border, nudging you back in!");
             return;
         } else if (status == BorderManager.BorderStatus.IMMOBILIZE) {
             // Freeze player if outside and stuck (optional)
@@ -211,20 +208,19 @@ public class BlitzUHC implements Listener {
     }
 
     // --- BorderShrinkTask LOGIC ---
-    private static class BorderShrinkTask extends BukkitRunnable {
+    private static class BorderShrinkTask {
         private final BorderManager borderManager;
         private final World world;
         private final JavaPlugin plugin;
         private final int[][] shrinkPhases = {
-                {2000, 750},  // size, duration seconds
+                {2000, 750},  // size, duration seconds (12.5min)
                 {1500, 750},
                 {1000, 750},
                 {500, 750},
-                {100, 300},
+                {100, 300},   // 5 min
                 {50, 300},
-                {25, 180}
+                {25, 180}     // 3 min
         };
-        private int phase = 0;
 
         public BorderShrinkTask(BorderManager borderManager, World world, JavaPlugin plugin) {
             this.borderManager = borderManager;
@@ -232,21 +228,30 @@ public class BlitzUHC implements Listener {
             this.plugin = plugin;
         }
 
-        @Override
-        public void run() {
-            if (phase < shrinkPhases.length) {
-                int size = shrinkPhases[phase][0];
-                int duration = shrinkPhases[phase][1];
-                borderManager.setBorderSize(size); // Update your border ranges
-                world.getWorldBorder().setSize(size, duration);
-                Bukkit.broadcastMessage("§eBorder is now " + size + "x" + size + ", shrinking over " + (duration/60) + " min!");
-                // Regenerate the bedrock border for the new size each shrink phase
-                BorderUtil.generateBedrockBorder(world, borderManager.minX, borderManager.minZ, borderManager.maxX, borderManager.maxZ);
-                phase++;
-            } else {
-                this.cancel();
+        // Recursively schedules each shrink phase after the previous one is done
+        public void startShrinkPhase(int phase) {
+            if (phase >= shrinkPhases.length) {
                 Bukkit.broadcastMessage("§aBorder shrinking complete!");
+                return;
             }
+            int size = shrinkPhases[phase][0];
+            int duration = shrinkPhases[phase][1];
+            borderManager.setBorderSize(size);
+            BorderUtil.generateBedrockBorder(world, borderManager.minX, borderManager.minZ, borderManager.maxX, borderManager.maxZ);
+            Bukkit.broadcastMessage("§eBorder is now " + size + "x" + size + ", shrinking over " + (duration/60) + " min!");
+
+            // For ghost border only: do NOT animate vanilla border, keep it invisible/huge
+            // If you want vanilla border visual to animate as well, uncomment below:
+            // world.getWorldBorder().setCenter((borderManager.minX + borderManager.maxX) / 2.0, (borderManager.minZ + borderManager.maxZ) / 2.0);
+            // world.getWorldBorder().setSize(size, duration);
+
+            // Schedule next phase after 'duration' seconds
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    startShrinkPhase(phase + 1);
+                }
+            }.runTaskLater(plugin, duration * 20L); // duration in seconds -> ticks
         }
     }
 
@@ -292,7 +297,7 @@ public class BlitzUHC implements Listener {
             }
 
             // 2. Place 5 blocks of bedrock above the surface
-            for (int y = surfaceY + 1; y <= surfaceY + 4; y++) {
+            for (int y = surfaceY + 1; y <= surfaceY + 3; y++) {
                 if (y <= maxY) {
                     Block block = world.getBlockAt(x, y, z);
                     block.setType(Material.BEDROCK, false);
