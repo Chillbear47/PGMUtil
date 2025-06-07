@@ -173,25 +173,45 @@ public class BlitzUHC implements Listener {
         }
 
         // Generate all glass locations for the player
+        // Generate all glass locations for the player, full vertical wall from y=0 to y=surface+5
         public Set<Location> getGlassBorderLocations(Location playerLoc, int radius) {
             Set<Location> locs = new HashSet<>();
             World world = playerLoc.getWorld();
-            double x = playerLoc.getX(), z = playerLoc.getZ();
-            double y = playerLoc.getY();
+            int playerX = playerLoc.getBlockX();
+            int playerZ = playerLoc.getBlockZ();
 
-            // For each border, check if player is close enough, add vertical wall
-            for (int dy = 0; dy < 7; dy++) {
-                for (int i = -3; i <= 3; i++) {
-                    if (Math.abs(x - minX) < radius)
-                        locs.add(new Location(world, minX, y + dy, z + i));
-                    if (Math.abs(x - maxX) < radius)
-                        locs.add(new Location(world, maxX, y + dy, z + i));
-                    if (Math.abs(z - minZ) < radius)
-                        locs.add(new Location(world, x + i, y + dy, minZ));
-                    if (Math.abs(z - maxZ) < radius)
-                        locs.add(new Location(world, x + i, y + dy, maxZ));
+            // North/South borders
+            for (int x = minX; x <= maxX; x++) {
+                if (Math.abs(playerX - x) <= radius || Math.abs(playerZ - minZ) <= radius) {
+                    int surfaceY = world.getHighestBlockYAt(x, minZ);
+                    for (int y = 0; y <= surfaceY + 5; y++) {
+                        locs.add(new Location(world, x, y, minZ));
+                    }
+                }
+                if (Math.abs(playerX - x) <= radius || Math.abs(playerZ - maxZ) <= radius) {
+                    int surfaceY = world.getHighestBlockYAt(x, maxZ);
+                    for (int y = 0; y <= surfaceY + 5; y++) {
+                        locs.add(new Location(world, x, y, maxZ));
+                    }
                 }
             }
+
+            // West/East borders (excluding corners)
+            for (int z = minZ + 1; z <= maxZ - 1; z++) {
+                if (Math.abs(playerZ - z) <= radius || Math.abs(playerX - minX) <= radius) {
+                    int surfaceY = world.getHighestBlockYAt(minX, z);
+                    for (int y = 0; y <= surfaceY + 5; y++) {
+                        locs.add(new Location(world, minX, y, z));
+                    }
+                }
+                if (Math.abs(playerZ - z) <= radius || Math.abs(playerX - maxX) <= radius) {
+                    int surfaceY = world.getHighestBlockYAt(maxX, z);
+                    for (int y = 0; y <= surfaceY + 5; y++) {
+                        locs.add(new Location(world, maxX, y, z));
+                    }
+                }
+            }
+
             return locs;
         }
 
@@ -296,8 +316,8 @@ public class BlitzUHC implements Listener {
                 block.setType(Material.BEDROCK, false);
             }
 
-            // 2. Place 5 blocks of bedrock above the surface
-            for (int y = surfaceY + 1; y <= surfaceY + 3; y++) {
+            // 2. Place 4 blocks of bedrock above the surface
+            for (int y = surfaceY + 1; y <= surfaceY + 1; y++) {
                 if (y <= maxY) {
                     Block block = world.getBlockAt(x, y, z);
                     block.setType(Material.BEDROCK, false);
