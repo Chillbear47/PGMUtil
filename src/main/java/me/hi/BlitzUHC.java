@@ -106,12 +106,12 @@ public class BlitzUHC implements Listener {
         if (dist <= 7.0 && borderManager.isNearBorder(loc)) {
             if (!playersWithGlass.contains(player.getUniqueId())) {
                 playersWithGlass.add(player.getUniqueId());
-                showGhostGlass(player, loc.getWorld());
+                showGhostGlass(player);
             }
         } else {
-            if (playersWithGlass.contains(player.getUniqueId())) {
-                playersWithGlass.remove(player.getUniqueId());
-                removeGhostGlass(player, loc.getWorld());
+            if (!playersWithGlass.contains(player.getUniqueId())) {
+                playersWithGlass.add(player.getUniqueId());
+                removeGhostGlass(player);
             }
         }
     }
@@ -180,38 +180,42 @@ public class BlitzUHC implements Listener {
             int playerX = playerLoc.getBlockX();
             int playerZ = playerLoc.getBlockZ();
 
-            // North/South borders
-            for (int x = minX; x <= maxX; x++) {
-                if (Math.abs(playerX - x) <= radius || Math.abs(playerZ - minZ) <= radius) {
+            // North wall (z = minZ)
+            if (Math.abs(playerZ - minZ) <= radius) {
+                for (int x = minX; x <= maxX; x++) {
                     int surfaceY = world.getHighestBlockYAt(x, minZ);
-                    for (int y = 0; y <= surfaceY + 5; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
                         locs.add(new Location(world, x, y, minZ));
                     }
                 }
-                if (Math.abs(playerX - x) <= radius || Math.abs(playerZ - maxZ) <= radius) {
+            }
+            // South wall (z = maxZ)
+            if (Math.abs(playerZ - maxZ) <= radius) {
+                for (int x = minX; x <= maxX; x++) {
                     int surfaceY = world.getHighestBlockYAt(x, maxZ);
-                    for (int y = 0; y <= surfaceY + 5; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
                         locs.add(new Location(world, x, y, maxZ));
                     }
                 }
             }
-
-            // West/East borders (excluding corners)
-            for (int z = minZ + 1; z <= maxZ - 1; z++) {
-                if (Math.abs(playerZ - z) <= radius || Math.abs(playerX - minX) <= radius) {
+            // West wall (x = minX)
+            if (Math.abs(playerX - minX) <= radius) {
+                for (int z = minZ + 1; z <= maxZ - 1; z++) {
                     int surfaceY = world.getHighestBlockYAt(minX, z);
-                    for (int y = 0; y <= surfaceY + 5; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
                         locs.add(new Location(world, minX, y, z));
                     }
                 }
-                if (Math.abs(playerZ - z) <= radius || Math.abs(playerX - maxX) <= radius) {
+            }
+            // East wall (x = maxX)
+            if (Math.abs(playerX - maxX) <= radius) {
+                for (int z = minZ + 1; z <= maxZ - 1; z++) {
                     int surfaceY = world.getHighestBlockYAt(maxX, z);
-                    for (int y = 0; y <= surfaceY + 5; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
                         locs.add(new Location(world, maxX, y, z));
                     }
                 }
             }
-
             return locs;
         }
 
@@ -327,17 +331,19 @@ public class BlitzUHC implements Listener {
     }
 
     // --- Ghost Border utility ---
-    private void showGhostGlass(Player player, World world) {
+    // Replace showGhostGlass and removeGhostGlass methods with:
+    private void showGhostGlass(Player player) {
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
             sendFakeBlock(player, loc, Material.RED_STAINED_GLASS);
         }
     }
 
-    private void removeGhostGlass(Player player, World world) {
+    private void removeGhostGlass(Player player) {
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
-            sendFakeBlock(player, loc, world.getBlockAt(loc).getType());
+            // show real block underneath
+            sendFakeBlock(player, loc, loc.getWorld().getBlockAt(loc).getType());
         }
     }
 
