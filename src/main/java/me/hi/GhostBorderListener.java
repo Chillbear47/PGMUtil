@@ -1,21 +1,18 @@
 package me.hi;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.event.PacketListenerPriority;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.player.PlayerMoveEvent;
-import com.github.retrooper.packetevents.event.PacketListenerAbstract;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerMoveEvent;
 
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
-public class GhostBorderListener extends PacketListenerAbstract {
+public class GhostBorderListener implements Listener {
 
     private final BorderManager borderManager;
 
@@ -23,7 +20,6 @@ public class GhostBorderListener extends PacketListenerAbstract {
     private final Set<UUID> playersWithGlass = new HashSet<>();
 
     public GhostBorderListener(BorderManager borderManager) {
-        super(PacketListenerPriority.NORMAL);
         this.borderManager = borderManager;
     }
 
@@ -48,30 +44,21 @@ public class GhostBorderListener extends PacketListenerAbstract {
     }
 
     private void showGhostGlass(Player player, World world) {
-        // For each border direction, if player is within 7 blocks, send 7x4 "wall" of red glass
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
-            PacketEvents.get().getServerUtils().sendBlockChange(
-                    player,
-                    loc,
-                    Material.RED_STAINED_GLASS,
-                    (byte) 14 // Red glass data value in 1.8–1.12, not needed for 1.13+
-            );
+            sendFakeBlock(player, loc, Material.RED_STAINED_GLASS);
         }
     }
 
     private void removeGhostGlass(Player player, World world) {
-        // Replace glass with actual world blocks
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
-            Material realMat = world.getBlockAt(loc).getType();
-            byte realData = world.getBlockAt(loc).getData();
-            PacketEvents.get().getServerUtils().sendBlockChange(
-                    player,
-                    loc,
-                    realMat,
-                    realData
-            );
+            sendFakeBlock(player, loc, world.getBlockAt(loc).getType());
         }
+    }
+
+    // Use Bukkit's safe API for sending fake blocks
+    private void sendFakeBlock(Player player, Location loc, Material material) {
+        player.sendBlockChange(loc, material.createBlockData());
     }
 }
