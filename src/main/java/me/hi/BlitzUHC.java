@@ -240,6 +240,8 @@ public class BlitzUHC implements Listener {
                 borderManager.setBorderSize(size); // Update your border ranges
                 world.getWorldBorder().setSize(size, duration);
                 Bukkit.broadcastMessage("§eBorder is now " + size + "x" + size + ", shrinking over " + (duration/60) + " min!");
+                // Regenerate the bedrock border for the new size each shrink phase
+                BorderUtil.generateBedrockBorder(world, borderManager.minX, borderManager.minZ, borderManager.maxX, borderManager.maxZ);
                 phase++;
             } else {
                 this.cancel();
@@ -251,12 +253,8 @@ public class BlitzUHC implements Listener {
     // --- BorderUtil (BEDROCK border generation) ---
     private static class BorderUtil {
         /**
-         * Lays a 1 block thick, 4 block high bedrock border around the defined rectangular area.
-         * @param world The world to place in.
-         * @param x1 First corner X
-         * @param z1 First corner Z
-         * @param x2 Second corner X
-         * @param z2 Second corner Z
+         * Lays a 1 block thick, 5 block tall bedrock border above the topmost natural block,
+         * and all the way down to y=0, overwriting all blocks on its way.
          */
         public static void generateBedrockBorder(World world, int x1, int z1, int x2, int z2) {
             int minX = Math.min(x1, x2);
@@ -264,30 +262,41 @@ public class BlitzUHC implements Listener {
             int minZ = Math.min(z1, z2);
             int maxZ = Math.max(z1, z2);
 
-            int worldMinY = world.getMinHeight(); // usually 0
+            int worldMinY = 0;
             int worldMaxY = world.getMaxHeight(); // usually 256
 
+            // North and South walls
             for (int x = minX; x <= maxX; x++) {
-                // North wall
-                setBedrockColumn(world, x, minZ, worldMinY, worldMaxY);
-                // South wall
-                setBedrockColumn(world, x, maxZ, worldMinY, worldMaxY);
+                setBedrockWall(world, x, minZ, worldMinY, worldMaxY);
+                setBedrockWall(world, x, maxZ, worldMinY, worldMaxY);
             }
 
-            for (int z = minZ; z <= maxZ; z++) {
-                // West wall
-                setBedrockColumn(world, minX, z, worldMinY, worldMaxY);
-                // East wall
-                setBedrockColumn(world, maxX, z, worldMinY, worldMaxY);
+            // West and East walls
+            for (int z = minZ + 1; z <= maxZ - 1; z++) { // avoid corners being set twice
+                setBedrockWall(world, minX, z, worldMinY, worldMaxY);
+                setBedrockWall(world, maxX, z, worldMinY, worldMaxY);
             }
         }
 
-        private static void setBedrockColumn(World world, int x, int z, int minY, int maxY) {
+        /**
+         * Overwrites all blocks from y=0 up to the topmost natural block at (x,z) with bedrock,
+         * and then places a 5 tall vertical bedrock wall above the surface.
+         */
+        private static void setBedrockWall(World world, int x, int z, int minY, int maxY) {
+            // 1. Fill from minY up to the surface with bedrock (y=0 to y=surfaceY)
             int surfaceY = world.getHighestBlockYAt(x, z);
-            // Place bedrock from surfaceY down to minY (bedrock layer), and up to surfaceY+3
-            for (int y = minY; y <= surfaceY + 3; y++) {
+
+            for (int y = minY; y <= surfaceY; y++) {
                 Block block = world.getBlockAt(x, y, z);
                 block.setType(Material.BEDROCK, false);
+            }
+
+            // 2. Place 5 blocks of bedrock above the surface
+            for (int y = surfaceY + 1; y <= surfaceY + 4; y++) {
+                if (y <= maxY) {
+                    Block block = world.getBlockAt(x, y, z);
+                    block.setType(Material.BEDROCK, false);
+                }
             }
         }
     }
