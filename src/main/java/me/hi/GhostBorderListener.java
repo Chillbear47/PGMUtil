@@ -2,7 +2,7 @@ package me.hi;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
-import com.github.retrooper.packetevents.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
