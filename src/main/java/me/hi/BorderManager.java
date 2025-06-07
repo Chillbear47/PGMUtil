@@ -83,4 +83,14 @@ public class BorderManager {
         }
         return locs;
     }
+    public void setBorderSize(int size) {
+        // Center of the border, adjust if needed
+        int centerX = (minX + maxX) / 2;
+        int centerZ = (minZ + maxZ) / 2;
+        int half = size / 2;
+        this.minX = centerX - half;
+        this.maxX = centerX + half;
+        this.minZ = centerZ - half;
+        this.maxZ = centerZ + half;
+    }
 }

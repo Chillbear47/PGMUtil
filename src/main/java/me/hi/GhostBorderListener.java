@@ -2,6 +2,7 @@ package me.hi;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import org.bukkit.event.EventHandler;
 import org.bukkit.event.player.PlayerMoveEvent;
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import org.bukkit.Bukkit;
@@ -26,7 +27,7 @@ public class GhostBorderListener extends PacketListenerAbstract {
         this.borderManager = borderManager;
     }
 
-    @Override
+    @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
         Location loc = player.getLocation();
