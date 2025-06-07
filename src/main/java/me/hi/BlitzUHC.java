@@ -39,21 +39,23 @@ public class BlitzUHC implements Listener {
     @EventHandler
     public void onMatchStart(MatchStartEvent event) {
         Match match = event.getMatch();
+        // Use a debug print or logger if unsure about the output of getGamemode()
+        // Bukkit.getLogger().info("Gamemode: " + match.getMap().getGamemode().toString());
+
         // Only setup border in blitz mode
-        if (match.getMap().getGamemode().getId().equalsIgnoreCase("blitz")) {
+        if(match.getMap().getGamemode().toString().toLowerCase().contains("blitz")) {
             World world = Bukkit.getWorld(match.getWorld().getName());
-            // TODO: You may wish to set border size based on map config, here hardcoded for example
-            int borderSize = 2000;
-            int minX = -borderSize / 2, maxX = borderSize / 2, minZ = -borderSize / 2, maxZ = borderSize / 2;
 
-            this.borderManager = new BorderManager(minX, maxX, minZ, maxZ);
+            // Use the provided corners
+            int minX = -1100, minZ = 857;
+            int maxX = 900, maxZ = 2857;
 
-            // Optional: generate a bedrock border at the start
+            borderManager = new BorderManager(minX, maxX, minZ, maxZ);
             BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
 
-            // Setup Bukkit WorldBorder as visual as well
-            world.getWorldBorder().setCenter(0, 0);
-            world.getWorldBorder().setSize(borderSize);
+            // Setup Bukkit WorldBorder
+            world.getWorldBorder().setCenter((minX + maxX) / 2.0, (minZ + maxZ) / 2.0);
+            world.getWorldBorder().setSize(Math.max(maxX - minX, maxZ - minZ));
 
             // Schedule border shrinking logic
             this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
