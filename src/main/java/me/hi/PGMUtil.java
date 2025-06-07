@@ -15,6 +15,7 @@ public final class PGMUtil extends JavaPlugin {
 
         // Pass matchManager to MonumentTracker's constructor
         Bukkit.getPluginManager().registerEvents(new MonumentTracker(matchManager), this);
+        Bukkit.getPluginManager().registerEvents(new BlitzUHC(this), this);
     }
 
     @Override

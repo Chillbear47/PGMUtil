@@ -13,6 +13,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import tc.oc.pgm.api.match.event.MatchStartEvent;
 import tc.oc.pgm.api.match.Match;
+import tc.oc.pgm.blitz.BlitzMatchModule;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -39,30 +40,36 @@ public class BlitzUHC implements Listener {
     @EventHandler
     public void onMatchStart(MatchStartEvent event) {
         Match match = event.getMatch();
-        // Use a debug print or logger if unsure about the output of getGamemode()
-        // Bukkit.getLogger().info("Gamemode: " + match.getMap().getGamemode().toString());
 
-        // Only setup border in blitz mode
-        if(match.getMap().getGamemode().toString().toLowerCase().contains("blitz")) {
-            World world = Bukkit.getWorld(match.getWorld().getName());
+        // Only setup border if this is a blitz match
+        BlitzMatchModule blitz = match.getModule(BlitzMatchModule.class);
+        if (blitz == null) return;
 
-            // Use the provided corners
-            int minX = -1100, minZ = 857;
-            int maxX = 900, maxZ = 2857;
-
-            borderManager = new BorderManager(minX, maxX, minZ, maxZ);
-            BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
-
-            // Setup Bukkit WorldBorder
-            world.getWorldBorder().setCenter((minX + maxX) / 2.0, (minZ + maxZ) / 2.0);
-            world.getWorldBorder().setSize(Math.max(maxX - minX, maxZ - minZ));
-
-            // Schedule border shrinking logic
-            this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
-            borderShrinkTask.runTaskTimer(plugin, 20, 20);
-
-            Bukkit.getPluginManager().registerEvents(this, plugin); // For PlayerMoveEvent
+        World world = Bukkit.getWorld(match.getWorld().getName());
+        if (world == null) {
+            Bukkit.getLogger().warning("[PGMUtil] Could not find world: " + match.getWorld().getName());
+            return;
         }
+
+        int minX = -1100, minZ = 857;
+        int maxX = 900, maxZ = 2857;
+
+        borderManager = new BorderManager(minX, maxX, minZ, maxZ);
+        BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
+
+        // Setup Bukkit WorldBorder as well
+        double centerX = (minX + maxX) / 2.0;
+        double centerZ = (minZ + maxZ) / 2.0;
+        double size = Math.max(maxX - minX, maxZ - minZ);
+        world.getWorldBorder().setCenter(centerX, centerZ);
+        world.getWorldBorder().setSize(size);
+
+        // Schedule border shrinking logic
+        this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
+        borderShrinkTask.runTaskTimer(plugin, 20, 20);
+
+        // Register this for PlayerMoveEvent, if not already registered
+        Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
     // PlayerMoveEvent: handles both enforcement and ghost glass
