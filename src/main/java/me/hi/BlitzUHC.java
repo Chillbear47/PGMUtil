@@ -73,8 +73,8 @@ public class BlitzUHC implements Listener {
             return;
         }
 
-        int minX = -1100, minZ = 857;
-        int maxX = 900, maxZ = 2857;
+        int minX = -1164, minZ = 857;
+        int maxX = 836, maxZ = 2857;
 
         borderManager = new BorderManager(minX, maxX, minZ, maxZ);
         BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
