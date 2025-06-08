@@ -324,23 +324,6 @@ public class BlitzUHC implements Listener {
         }
     }
 
-    // --- Ghost Border utility ---
-    private void showGhostGlass(Player player) {
-        Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
-        for (Location loc : glassBlocks) {
-            sendFakeBlock(player, loc, Material.STAINED_GLASS, (byte) 14); // 14 = red
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    private void removeGhostGlass(Player player) {
-        Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
-        for (Location loc : glassBlocks) {
-            Block realBlock = loc.getWorld().getBlockAt(loc);
-            // For "removal", use the material and data of the actual block at that location
-            sendFakeBlock(player, loc, realBlock.getType(), realBlock.getData());
-        }
-    }
 
     // Use Bukkit API for fake blocks, safe and version-tolerant
     @SuppressWarnings("deprecation")
