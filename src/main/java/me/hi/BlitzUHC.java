@@ -15,9 +15,7 @@ import tc.oc.pgm.api.match.event.MatchStartEvent;
 import tc.oc.pgm.api.match.Match;
 import tc.oc.pgm.blitz.BlitzMatchModule;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * This class merges BlitzUHC border logic and auto-enables it for PGM matches with gamemode "blitz".
@@ -28,6 +26,7 @@ public class BlitzUHC implements Listener {
     private BorderManager borderManager;
     private BorderShrinkTask borderShrinkTask;
     private final Set<UUID> playersWithGlass = new HashSet<>();
+    private final Map<UUID, Set<Location>> playerGlassBlocks = new HashMap<>();
 
     private JavaPlugin plugin; // Needed for scheduling/running tasks
 
@@ -72,47 +71,55 @@ public class BlitzUHC implements Listener {
     // PlayerMoveEvent: handles both enforcement and ghost glass
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (borderManager == null) return; // Only if blitz border is active
+        if (borderManager == null) return;
 
         Player player = event.getPlayer();
         Location loc = player.getLocation();
 
-        // Border enforcement (kick back or nudge if outside)
         BorderManager.BorderStatus status = borderManager.getPlayerBorderStatus(loc);
 
         if (status == BorderManager.BorderStatus.INSIDE) {
             // Continue to ghost glass logic below
         } else if (status == BorderManager.BorderStatus.GLITCHED_FAR) {
-            // Teleport player 2 blocks inside border
             Location safeLoc = borderManager.getSafeLocationInsideBorder(loc, 2);
             player.teleport(safeLoc);
             player.sendMessage("§cYou were teleported back inside the border!");
             return;
         } else if (status == BorderManager.BorderStatus.GLITCHED_NEAR) {
-            // Nudge player inside border
             Location nudgeLoc = borderManager.getSafeLocationInsideBorder(loc, 1);
             player.setVelocity(nudgeLoc.toVector().subtract(loc.toVector()).normalize().multiply(0.4));
-            //player.sendMessage("§cYou are outside the border, nudging you back in!");
             return;
         } else if (status == BorderManager.BorderStatus.IMMOBILIZE) {
-            // Freeze player if outside and stuck (optional)
             event.setCancelled(true);
             player.sendMessage("§cYou cannot move outside the border!");
             return;
         }
 
-        // Ghost border logic
         double dist = borderManager.distanceToBorder(loc);
-        if (dist <= 7.0 && borderManager.isNearBorder(loc)) {
-            if (!playersWithGlass.contains(player.getUniqueId())) {
-                playersWithGlass.add(player.getUniqueId());
-                showGhostGlass(player);
+        boolean near = dist <= 7.0 && borderManager.isNearBorder(loc);
+
+        Set<Location> newGlass = near ? borderManager.getGlassBorderLocations(loc, 7) : new HashSet<>();
+        Set<Location> oldGlass = playerGlassBlocks.getOrDefault(player.getUniqueId(), new HashSet<>());
+
+        // Remove glass that is no longer needed
+        for (Location oldLoc : oldGlass) {
+            if (!newGlass.contains(oldLoc)) {
+                Block realBlock = oldLoc.getWorld().getBlockAt(oldLoc);
+                sendFakeBlock(player, oldLoc, realBlock.getType(), realBlock.getData());
             }
+        }
+        // Add new glass
+        for (Location newLoc : newGlass) {
+            if (!oldGlass.contains(newLoc)) {
+                sendFakeBlock(player, newLoc, Material.STAINED_GLASS, (byte) 14);
+            }
+        }
+
+        // Update tracked set
+        if (newGlass.isEmpty()) {
+            playerGlassBlocks.remove(player.getUniqueId());
         } else {
-            if (playersWithGlass.contains(player.getUniqueId())) {
-                playersWithGlass.remove(player.getUniqueId());
-                removeGhostGlass(player);
-            }
+            playerGlassBlocks.put(player.getUniqueId(), newGlass);
         }
     }
 
@@ -308,7 +315,7 @@ public class BlitzUHC implements Listener {
             }
 
             // 2. Place 5 blocks of bedrock above the surface
-            for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
+            for (int y = surfaceY + 1; y <= surfaceY + 1; y++) {
                 if (y <= maxY) {
                     Block block = world.getBlockAt(x, y, z);
                     block.setType(Material.BEDROCK, false);
