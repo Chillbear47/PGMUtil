@@ -109,8 +109,8 @@ public class BlitzUHC implements Listener {
                 showGhostGlass(player);
             }
         } else {
-            if (!playersWithGlass.contains(player.getUniqueId())) {
-                playersWithGlass.add(player.getUniqueId());
+            if (playersWithGlass.contains(player.getUniqueId())) {
+                playersWithGlass.remove(player.getUniqueId());
                 removeGhostGlass(player);
             }
         }
@@ -172,8 +172,7 @@ public class BlitzUHC implements Listener {
             return x <= minX + 7 || x >= maxX - 7 || z <= minZ + 7 || z >= maxZ - 7;
         }
 
-        // Generate all glass locations for the player
-        // Generate all glass locations for the player, full vertical wall from y=0 to y=surface+5
+        // Generate all glass locations for the player, 5 blocks tall above the bedrock border
         public Set<Location> getGlassBorderLocations(Location playerLoc, int radius) {
             Set<Location> locs = new HashSet<>();
             World world = playerLoc.getWorld();
@@ -320,8 +319,8 @@ public class BlitzUHC implements Listener {
                 block.setType(Material.BEDROCK, false);
             }
 
-            // 2. Place 4 blocks of bedrock above the surface
-            for (int y = surfaceY + 1; y <= surfaceY + 1; y++) {
+            // 2. Place 5 blocks of bedrock above the surface
+            for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
                 if (y <= maxY) {
                     Block block = world.getBlockAt(x, y, z);
                     block.setType(Material.BEDROCK, false);
@@ -331,7 +330,6 @@ public class BlitzUHC implements Listener {
     }
 
     // --- Ghost Border utility ---
-    // Replace showGhostGlass and removeGhostGlass methods with:
     private void showGhostGlass(Player player) {
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
@@ -339,6 +337,7 @@ public class BlitzUHC implements Listener {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private void removeGhostGlass(Player player) {
         Set<Location> glassBlocks = borderManager.getGlassBorderLocations(player.getLocation(), 7);
         for (Location loc : glassBlocks) {
@@ -349,6 +348,7 @@ public class BlitzUHC implements Listener {
     }
 
     // Use Bukkit API for fake blocks, safe and version-tolerant
+    @SuppressWarnings("deprecation")
     private void sendFakeBlock(Player player, Location loc, Material material, byte data) {
         player.sendBlockChange(loc, material, data);
     }
