@@ -6,7 +6,6 @@ import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.events.PacketListener;
 import com.comphenix.protocol.reflect.StructureModifier;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -25,25 +24,16 @@ import tc.oc.pgm.blitz.BlitzMatchModule;
 
 import java.util.*;
 
-/**
- * This class merges BlitzUHC border logic and auto-enables it for PGM matches with gamemode "blitz".
- * Register this as a listener from your plugin's onEnable.
- */
 public class BlitzUHC implements Listener {
 
     private BorderManager borderManager;
     private BorderShrinkTask borderShrinkTask;
-    // Track current ghost glass for each player
     private final Map<UUID, Set<Location>> playerGlassBlocks = new HashMap<>();
-    private JavaPlugin plugin; // Needed for scheduling/running tasks
-
-    // ProtocolLib manager
+    private JavaPlugin plugin;
     private ProtocolManager protocolManager;
 
-    // Call this in your plugin's onEnable, passing your plugin instance
     public BlitzUHC(JavaPlugin plugin) {
         this.plugin = plugin;
-        // Register ProtocolLib packet listener
         setupProtocolLib();
     }
 
@@ -63,7 +53,6 @@ public class BlitzUHC implements Listener {
                     Location loc = new Location(player.getWorld(), pos.getX(), pos.getY(), pos.getZ());
                     if (glassBlocks.contains(loc)) {
                         event.setCancelled(true);
-                        // Optionally: re-send ghost glass block to the player
                         sendFakeBlock(player, loc, Material.STAINED_GLASS, (byte) 14);
                     }
                 }
@@ -71,12 +60,10 @@ public class BlitzUHC implements Listener {
         });
     }
 
-    /** Listen for the start of a PGM match and only initialize for Blitz. */
     @EventHandler
     public void onMatchStart(MatchStartEvent event) {
         Match match = event.getMatch();
 
-        // Only setup border if this is a blitz match
         BlitzMatchModule blitz = match.getModule(BlitzMatchModule.class);
         if (blitz == null) return;
 
@@ -92,19 +79,23 @@ public class BlitzUHC implements Listener {
         borderManager = new BorderManager(minX, maxX, minZ, maxZ);
         BorderUtil.generateBedrockBorder(world, minX, minZ, maxX, maxZ);
 
-        // Setup Bukkit WorldBorder as well (make it huge and out of the way to hide vanilla border visual)
         world.getWorldBorder().setCenter(0, 0);
         world.getWorldBorder().setSize(30000);
 
-        // Schedule border shrinking logic (now using correct time-based phase changes)
-        this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
+        this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin, this);
         borderShrinkTask.startShrinkPhase(0);
 
-        // Register this for PlayerMoveEvent, if not already registered
         Bukkit.getPluginManager().registerEvents(this, plugin);
+
+        // Schedule periodic safe border check (every 5 seconds)
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                checkAndTeleportAllPlayersSafe();
+            }
+        }.runTaskTimer(plugin, 0L, 100L); // 5 seconds
     }
 
-    // PlayerMoveEvent: handles both enforcement and ghost glass
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         if (borderManager == null) return;
@@ -117,12 +108,12 @@ public class BlitzUHC implements Listener {
         if (status == BorderManager.BorderStatus.INSIDE) {
             // Continue to ghost glass logic below
         } else if (status == BorderManager.BorderStatus.GLITCHED_FAR) {
-            Location safeLoc = borderManager.getSafeLocationInsideBorder(loc, 2);
+            Location safeLoc = borderManager.getSafeSurfaceLocationInsideBorder(player.getWorld(), loc, 2);
             player.teleport(safeLoc);
             player.sendMessage("§cYou were teleported back inside the border!");
             return;
         } else if (status == BorderManager.BorderStatus.GLITCHED_NEAR) {
-            Location nudgeLoc = borderManager.getSafeLocationInsideBorder(loc, 1);
+            Location nudgeLoc = borderManager.getSafeSurfaceLocationInsideBorder(player.getWorld(), loc, 1);
             player.setVelocity(nudgeLoc.toVector().subtract(loc.toVector()).normalize().multiply(0.4));
             return;
         } else if (status == BorderManager.BorderStatus.IMMOBILIZE) {
@@ -137,21 +128,18 @@ public class BlitzUHC implements Listener {
         Set<Location> newGlass = near ? borderManager.getGlassBorderLocations(loc, 7) : new HashSet<>();
         Set<Location> oldGlass = playerGlassBlocks.getOrDefault(player.getUniqueId(), new HashSet<>());
 
-        // Remove glass that is no longer needed
         for (Location oldLoc : oldGlass) {
             if (!newGlass.contains(oldLoc)) {
                 Block realBlock = oldLoc.getWorld().getBlockAt(oldLoc);
                 sendFakeBlock(player, oldLoc, realBlock.getType(), realBlock.getData());
             }
         }
-        // Add new glass
         for (Location newLoc : newGlass) {
             if (!oldGlass.contains(newLoc)) {
                 sendFakeBlock(player, newLoc, Material.STAINED_GLASS, (byte) 14);
             }
         }
 
-        // Update tracked set
         if (newGlass.isEmpty()) {
             playerGlassBlocks.remove(player.getUniqueId());
         } else {
@@ -159,7 +147,19 @@ public class BlitzUHC implements Listener {
         }
     }
 
-    // --- BorderManager LOGIC ---
+    // Call this after border shrink and on timer
+    public void checkAndTeleportAllPlayersSafe() {
+        if (borderManager == null) return;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            Location loc = player.getLocation();
+            if (borderManager.getPlayerBorderStatus(loc) != BorderManager.BorderStatus.INSIDE) {
+                Location safeLoc = borderManager.getSafeSurfaceLocationInsideBorder(player.getWorld(), loc, 2);
+                player.teleport(safeLoc);
+                player.sendMessage("§cYou were teleported back inside the border!");
+            }
+        }
+    }
+
     private static class BorderManager {
         private int minX, maxX, minZ, maxZ;
 
@@ -172,9 +172,9 @@ public class BlitzUHC implements Listener {
 
         enum BorderStatus {
             INSIDE,
-            GLITCHED_NEAR,     // <5 blocks outside
-            GLITCHED_FAR,      // >5 blocks outside
-            IMMOBILIZE         // (Optional: stuck outside, can't move)
+            GLITCHED_NEAR,
+            GLITCHED_FAR,
+            IMMOBILIZE
         }
 
         public BorderStatus getPlayerBorderStatus(Location loc) {
@@ -191,7 +191,8 @@ public class BlitzUHC implements Listener {
             return BorderStatus.INSIDE;
         }
 
-        public Location getSafeLocationInsideBorder(Location from, int buffer) {
+        // Teleport to 2 blocks inside border, at safe surface
+        public Location getSafeSurfaceLocationInsideBorder(World world, Location from, int buffer) {
             double x = from.getX();
             double z = from.getZ();
 
@@ -200,7 +201,10 @@ public class BlitzUHC implements Listener {
             if (z < minZ) z = minZ + buffer;
             if (z > maxZ) z = maxZ - buffer;
 
-            return new Location(from.getWorld(), x, from.getY(), z, from.getYaw(), from.getPitch());
+            int blockX = (int) Math.floor(x);
+            int blockZ = (int) Math.floor(z);
+            int surfaceY = world.getHighestBlockYAt(blockX, blockZ);
+            return new Location(world, blockX + 0.5, surfaceY + 1, blockZ + 0.5, from.getYaw(), from.getPitch());
         }
 
         public double distanceToBorder(Location loc) {
@@ -215,7 +219,6 @@ public class BlitzUHC implements Listener {
             return x <= minX + 7 || x >= maxX - 7 || z <= minZ + 7 || z >= maxZ - 7;
         }
 
-        // Generate all glass locations for the player, 5 blocks tall above the bedrock border
         public Set<Location> getGlassBorderLocations(Location playerLoc, int radius) {
             Set<Location> locs = new HashSet<>();
             World world = playerLoc.getWorld();
@@ -223,7 +226,6 @@ public class BlitzUHC implements Listener {
             int playerY = playerLoc.getBlockY();
             int playerZ = playerLoc.getBlockZ();
 
-            // We'll check all border faces within the cube radius of the player
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dy = -radius; dy <= radius; dy++) {
                     for (int dz = -radius; dz <= radius; dz++) {
@@ -231,13 +233,11 @@ public class BlitzUHC implements Listener {
                         int y = playerY + dy;
                         int z = playerZ + dz;
 
-                        // Only consider blocks on the border walls (not inside)
                         boolean onBorder =
                                 (x == minX || x == maxX) && (z >= minZ && z <= maxZ) ||
                                         (z == minZ || z == maxZ) && (x >= minX && x <= maxX);
 
                         if (onBorder && y >= 0 && y < world.getMaxHeight()) {
-                            // Don't send glass for blocks that are already bedrock (the wall itself)
                             Material type = world.getBlockAt(x, y, z).getType();
                             if (type != Material.BEDROCK) {
                                 locs.add(new Location(world, x, y, z));
@@ -250,7 +250,6 @@ public class BlitzUHC implements Listener {
         }
 
         public void setBorderSize(int size) {
-            // Center of the border, adjust if needed
             int centerX = (minX + maxX) / 2;
             int centerZ = (minZ + maxZ) / 2;
             int half = size / 2;
@@ -261,28 +260,28 @@ public class BlitzUHC implements Listener {
         }
     }
 
-    // --- BorderShrinkTask LOGIC ---
     private static class BorderShrinkTask {
         private final BorderManager borderManager;
         private final World world;
         private final JavaPlugin plugin;
+        private final BlitzUHC blitzUHC;
         private final int[][] shrinkPhases = {
-                {2000, 750},  // size, duration seconds (12.5min)
+                {2000, 750},
                 {1500, 750},
                 {1000, 750},
                 {500, 750},
-                {100, 300},   // 5 min
+                {100, 300},
                 {50, 300},
-                {25, 180}     // 3 min
+                {25, 180}
         };
 
-        public BorderShrinkTask(BorderManager borderManager, World world, JavaPlugin plugin) {
+        public BorderShrinkTask(BorderManager borderManager, World world, JavaPlugin plugin, BlitzUHC blitzUHC) {
             this.borderManager = borderManager;
             this.world = world;
             this.plugin = plugin;
+            this.blitzUHC = blitzUHC;
         }
 
-        // Recursively schedules each shrink phase after the previous one is done
         public void startShrinkPhase(int phase) {
             if (phase >= shrinkPhases.length) {
                 Bukkit.broadcastMessage("§aBorder shrinking complete!");
@@ -294,27 +293,19 @@ public class BlitzUHC implements Listener {
             BorderUtil.generateBedrockBorder(world, borderManager.minX, borderManager.minZ, borderManager.maxX, borderManager.maxZ);
             Bukkit.broadcastMessage("§eBorder is now " + size + "x" + size + ", shrinking over " + (duration/60) + " min!");
 
-            // For ghost border only: do NOT animate vanilla border, keep it invisible/huge
-            // If you want vanilla border visual to animate as well, uncomment below:
-            // world.getWorldBorder().setCenter((borderManager.minX + borderManager.maxX) / 2.0, (borderManager.minZ + borderManager.maxZ) / 2.0);
-            // world.getWorldBorder().setSize(size, duration);
+            // Teleport all players safely inside the new border
+            blitzUHC.checkAndTeleportAllPlayersSafe();
 
-            // Schedule next phase after 'duration' seconds
             new BukkitRunnable() {
                 @Override
                 public void run() {
                     startShrinkPhase(phase + 1);
                 }
-            }.runTaskLater(plugin, duration * 20L); // duration in seconds -> ticks
+            }.runTaskLater(plugin, duration * 20L);
         }
     }
 
-    // --- BorderUtil (BEDROCK border generation) ---
     private static class BorderUtil {
-        /**
-         * Lays a 1 block thick, 5 block tall bedrock border above the topmost natural block,
-         * and all the way down to y=0, overwriting all blocks on its way.
-         */
         public static void generateBedrockBorder(World world, int x1, int z1, int x2, int z2) {
             int minX = Math.min(x1, x2);
             int maxX = Math.max(x1, x2);
@@ -322,27 +313,20 @@ public class BlitzUHC implements Listener {
             int maxZ = Math.max(z1, z2);
 
             int worldMinY = 0;
-            int worldMaxY = world.getMaxHeight(); // usually 256
+            int worldMaxY = world.getMaxHeight();
 
-            // North and South walls
             for (int x = minX; x <= maxX; x++) {
                 setBedrockWall(world, x, minZ, worldMinY, worldMaxY);
                 setBedrockWall(world, x, maxZ, worldMinY, worldMaxY);
             }
 
-            // West and East walls
-            for (int z = minZ + 1; z <= maxZ - 1; z++) { // avoid corners being set twice
+            for (int z = minZ + 1; z <= maxZ - 1; z++) {
                 setBedrockWall(world, minX, z, worldMinY, worldMaxY);
                 setBedrockWall(world, maxX, z, worldMinY, worldMaxY);
             }
         }
 
-        /**
-         * Overwrites all blocks from y=0 up to the topmost natural block at (x,z) with bedrock,
-         * and then places a 5 tall vertical bedrock wall above the surface.
-         */
         private static void setBedrockWall(World world, int x, int z, int minY, int maxY) {
-            // 1. Fill from minY up to the surface with bedrock (y=0 to y=surfaceY)
             int surfaceY = world.getHighestBlockYAt(x, z);
 
             for (int y = minY; y <= surfaceY; y++) {
@@ -350,7 +334,6 @@ public class BlitzUHC implements Listener {
                 block.setType(Material.BEDROCK, false);
             }
 
-            // 2. Place 5 blocks of bedrock above the surface
             for (int y = surfaceY + 1; y <= surfaceY + 1; y++) {
                 if (y <= maxY) {
                     Block block = world.getBlockAt(x, y, z);
@@ -360,7 +343,6 @@ public class BlitzUHC implements Listener {
         }
     }
 
-    // Use Bukkit API for fake blocks, safe and version-tolerant
     @SuppressWarnings("deprecation")
     private void sendFakeBlock(Player player, Location loc, Material material, byte data) {
         player.sendBlockChange(loc, material, data);
