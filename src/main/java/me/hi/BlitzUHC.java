@@ -184,7 +184,7 @@ public class BlitzUHC implements Listener {
             if (Math.abs(playerZ - minZ) <= radius) {
                 for (int x = minX; x <= maxX; x++) {
                     int surfaceY = world.getHighestBlockYAt(x, minZ);
-                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
                         locs.add(new Location(world, x, y, minZ));
                     }
                 }
@@ -193,7 +193,7 @@ public class BlitzUHC implements Listener {
             if (Math.abs(playerZ - maxZ) <= radius) {
                 for (int x = minX; x <= maxX; x++) {
                     int surfaceY = world.getHighestBlockYAt(x, maxZ);
-                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
                         locs.add(new Location(world, x, y, maxZ));
                     }
                 }
@@ -202,7 +202,7 @@ public class BlitzUHC implements Listener {
             if (Math.abs(playerX - minX) <= radius) {
                 for (int z = minZ + 1; z <= maxZ - 1; z++) {
                     int surfaceY = world.getHighestBlockYAt(minX, z);
-                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
                         locs.add(new Location(world, minX, y, z));
                     }
                 }
@@ -211,7 +211,7 @@ public class BlitzUHC implements Listener {
             if (Math.abs(playerX - maxX) <= radius) {
                 for (int z = minZ + 1; z <= maxZ - 1; z++) {
                     int surfaceY = world.getHighestBlockYAt(maxX, z);
-                    for (int y = surfaceY + 1; y <= surfaceY + 2; y++) {
+                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
                         locs.add(new Location(world, maxX, y, z));
                     }
                 }
