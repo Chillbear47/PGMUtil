@@ -101,5 +101,13 @@
             <systemPath>${project.basedir}/src/main/resources/packetevents-spigot-2.8.0.jar</systemPath>
             <type>jar</type>
         </dependency>
+        <dependency>
+            <groupId>com.comphenix.protocol</groupId>
+            <artifactId>protocollib</artifactId>
+            <version>5.3.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/src/main/resources/ProtocolLib.jar</systemPath>
+            <type>jar</type>
+        </dependency>
     </dependencies>
 </project>

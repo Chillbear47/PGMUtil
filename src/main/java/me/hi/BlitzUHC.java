@@ -1,5 +1,13 @@
 package me.hi;
 
+import com.comphenix.protocol.ProtocolLibrary;
+import com.comphenix.protocol.ProtocolManager;
+import com.comphenix.protocol.events.PacketAdapter;
+import com.comphenix.protocol.events.PacketEvent;
+import com.comphenix.protocol.events.ListenerPriority;
+import com.comphenix.protocol.PacketType;
+import com.comphenix.protocol.events.PacketListener;
+import com.comphenix.protocol.reflect.StructureModifier;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -8,9 +16,6 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -28,13 +33,42 @@ public class BlitzUHC implements Listener {
 
     private BorderManager borderManager;
     private BorderShrinkTask borderShrinkTask;
+    // Track current ghost glass for each player
     private final Map<UUID, Set<Location>> playerGlassBlocks = new HashMap<>();
-
     private JavaPlugin plugin; // Needed for scheduling/running tasks
+
+    // ProtocolLib manager
+    private ProtocolManager protocolManager;
 
     // Call this in your plugin's onEnable, passing your plugin instance
     public BlitzUHC(JavaPlugin plugin) {
         this.plugin = plugin;
+        // Register ProtocolLib packet listener
+        setupProtocolLib();
+    }
+
+    private void setupProtocolLib() {
+        protocolManager = ProtocolLibrary.getProtocolManager();
+        protocolManager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.HIGH,
+                PacketType.Play.Client.BLOCK_DIG, PacketType.Play.Client.BLOCK_PLACE) {
+            @Override
+            public void onPacketReceiving(PacketEvent event) {
+                Player player = event.getPlayer();
+                Set<Location> glassBlocks = playerGlassBlocks.get(player.getUniqueId());
+                if (glassBlocks == null) return;
+
+                StructureModifier<com.comphenix.protocol.wrappers.BlockPosition> posMod = event.getPacket().getBlockPositionModifier();
+                if (posMod.size() > 0) {
+                    com.comphenix.protocol.wrappers.BlockPosition pos = posMod.read(0);
+                    Location loc = new Location(player.getWorld(), pos.getX(), pos.getY(), pos.getZ());
+                    if (glassBlocks.contains(loc)) {
+                        event.setCancelled(true);
+                        // Optionally: re-send ghost glass block to the player
+                        sendFakeBlock(player, loc, Material.STAINED_GLASS, (byte) 14);
+                    }
+                }
+            }
+        });
     }
 
     /** Listen for the start of a PGM match and only initialize for Blitz. */
@@ -64,7 +98,7 @@ public class BlitzUHC implements Listener {
 
         // Schedule border shrinking logic (now using correct time-based phase changes)
         this.borderShrinkTask = new BorderShrinkTask(borderManager, world, plugin);
-        borderShrinkTask.startShrinkPhase(0); // custom, see new class below
+        borderShrinkTask.startShrinkPhase(0);
 
         // Register this for PlayerMoveEvent, if not already registered
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -125,32 +159,6 @@ public class BlitzUHC implements Listener {
         }
     }
 
-    // --- Prevent ghost glass from being "broken" or right-clicked away ---
-    @EventHandler(ignoreCancelled = true)
-    public void onBlockBreak(BlockBreakEvent event) {
-        Player player = event.getPlayer();
-        Set<Location> glass = playerGlassBlocks.get(player.getUniqueId());
-        if (glass != null && glass.contains(event.getBlock().getLocation())) {
-            // Cancel the break (client event will still show break, but will restore it instantly)
-            event.setCancelled(true);
-            // Re-send the fake block to the player immediately (restores ghost block after break animation)
-            sendFakeBlock(player, event.getBlock().getLocation(), Material.STAINED_GLASS, (byte) 14);
-        }
-    }
-
-    @EventHandler(ignoreCancelled = true)
-    public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getClickedBlock() == null) return;
-        Player player = event.getPlayer();
-        Set<Location> glass = playerGlassBlocks.get(player.getUniqueId());
-        if (glass != null && glass.contains(event.getClickedBlock().getLocation())) {
-            // Cancel any right click interactions
-            event.setCancelled(true);
-            // Re-send the fake block to the player (in case the client "removes" it)
-            sendFakeBlock(player, event.getClickedBlock().getLocation(), Material.STAINED_GLASS, (byte) 14);
-        }
-    }
-
     // --- BorderManager LOGIC ---
     private static class BorderManager {
         private int minX, maxX, minZ, maxZ;
@@ -207,7 +215,7 @@ public class BlitzUHC implements Listener {
             return x <= minX + 7 || x >= maxX - 7 || z <= minZ + 7 || z >= maxZ - 7;
         }
 
-        // Generate all glass locations for the player, 7 block cuboid around player, but only on border faces
+        // Generate all glass locations for the player, 5 blocks tall above the bedrock border
         public Set<Location> getGlassBorderLocations(Location playerLoc, int radius) {
             Set<Location> locs = new HashSet<>();
             World world = playerLoc.getWorld();
@@ -215,6 +223,7 @@ public class BlitzUHC implements Listener {
             int playerY = playerLoc.getBlockY();
             int playerZ = playerLoc.getBlockZ();
 
+            // We'll check all border faces within the cube radius of the player
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dy = -radius; dy <= radius; dy++) {
                     for (int dz = -radius; dz <= radius; dz++) {
@@ -222,11 +231,13 @@ public class BlitzUHC implements Listener {
                         int y = playerY + dy;
                         int z = playerZ + dz;
 
+                        // Only consider blocks on the border walls (not inside)
                         boolean onBorder =
                                 (x == minX || x == maxX) && (z >= minZ && z <= maxZ) ||
                                         (z == minZ || z == maxZ) && (x >= minX && x <= maxX);
 
                         if (onBorder && y >= 0 && y < world.getMaxHeight()) {
+                            // Don't send glass for blocks that are already bedrock (the wall itself)
                             Material type = world.getBlockAt(x, y, z).getType();
                             if (type != Material.BEDROCK) {
                                 locs.add(new Location(world, x, y, z));
