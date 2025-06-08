@@ -177,41 +177,29 @@ public class BlitzUHC implements Listener {
             Set<Location> locs = new HashSet<>();
             World world = playerLoc.getWorld();
             int playerX = playerLoc.getBlockX();
+            int playerY = playerLoc.getBlockY();
             int playerZ = playerLoc.getBlockZ();
 
-            // North wall (z = minZ)
-            if (Math.abs(playerZ - minZ) <= radius) {
-                for (int x = minX; x <= maxX; x++) {
-                    int surfaceY = world.getHighestBlockYAt(x, minZ);
-                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
-                        locs.add(new Location(world, x, y, minZ));
-                    }
-                }
-            }
-            // South wall (z = maxZ)
-            if (Math.abs(playerZ - maxZ) <= radius) {
-                for (int x = minX; x <= maxX; x++) {
-                    int surfaceY = world.getHighestBlockYAt(x, maxZ);
-                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
-                        locs.add(new Location(world, x, y, maxZ));
-                    }
-                }
-            }
-            // West wall (x = minX)
-            if (Math.abs(playerX - minX) <= radius) {
-                for (int z = minZ + 1; z <= maxZ - 1; z++) {
-                    int surfaceY = world.getHighestBlockYAt(minX, z);
-                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
-                        locs.add(new Location(world, minX, y, z));
-                    }
-                }
-            }
-            // East wall (x = maxX)
-            if (Math.abs(playerX - maxX) <= radius) {
-                for (int z = minZ + 1; z <= maxZ - 1; z++) {
-                    int surfaceY = world.getHighestBlockYAt(maxX, z);
-                    for (int y = surfaceY + 1; y <= surfaceY + 5; y++) {
-                        locs.add(new Location(world, maxX, y, z));
+            // We'll check all border faces within the cube radius of the player
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dy = -radius; dy <= radius; dy++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        int x = playerX + dx;
+                        int y = playerY + dy;
+                        int z = playerZ + dz;
+
+                        // Only consider blocks on the border walls (not inside)
+                        boolean onBorder =
+                                (x == minX || x == maxX) && (z >= minZ && z <= maxZ) ||
+                                        (z == minZ || z == maxZ) && (x >= minX && x <= maxX);
+
+                        if (onBorder && y >= 0 && y < world.getMaxHeight()) {
+                            // Don't send glass for blocks that are already bedrock (the wall itself)
+                            Material type = world.getBlockAt(x, y, z).getType();
+                            if (type != Material.BEDROCK) {
+                                locs.add(new Location(world, x, y, z));
+                            }
+                        }
                     }
                 }
             }
