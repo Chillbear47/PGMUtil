@@ -6,22 +6,24 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
-import org.bukkit.event.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.event.player.PlayerItemDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionData;
+import org.bukkit.potion.Potion;
+import org.bukkit.potion.PotionType;
 import tc.oc.pgm.api.PGM;
 import tc.oc.pgm.api.match.Match;
 import tc.oc.pgm.destroyable.DestroyableMatchModule;
@@ -31,23 +33,22 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * InvetorySorter
+ * InvetorySorter (Spigot 1.8.8 compatible)
  *
- * Captures per-player preferred inventory layout (slots 0..35) from the first kit spawn,
- * just before their first content-changing action (place, consume, durability change, etc.),
- * and reapplies that layout after each subsequent spawn by reordering slots only.
+ * - Uses only Spigot-API 1.8.8 classes/methods.
+ * - No Material#isAir, CustomModelData, or NamespacedKey APIs.
+ * - Potion signature derived via Potion.fromItemStack (type/level/extended/splash).
  *
- * Notes:
- * - Only reorders main inventory and hotbar (slots 0..35). Armor/offhand are untouched.
- * - Does not change item content, only slot order.
- * - Snapshot is taken before the first content change; inventory clicks do not trigger locking.
- * - If SCOPE_DTM_ONLY is true, this runs only for DTM matches (Destroy The Monument).
+ * Behavior:
+ * - Captures the player's preferred layout (slots 0..35) right before their first content change.
+ * - Reapplies that layout after PGM applies kits (on respawn/join tick later).
+ * - Only reorders; contents unchanged. Armor/offhand untouched (offhand doesn't exist in 1.8).
  */
 public class InvetorySorter implements Listener {
 
     private final JavaPlugin plugin;
 
-    // Toggle to restrict behavior only to DTM matches. Set true to prioritize DTM only.
+    // Set to true to only run during DTM matches.
     private static final boolean SCOPE_DTM_ONLY = false;
 
     private final PreferenceStore store;
@@ -58,29 +59,34 @@ public class InvetorySorter implements Listener {
         this.store = new PreferenceStore(new File(plugin.getDataFolder(), "inventory_prefs.yml"));
     }
 
-    //
-    // Spawn/Join hooks: arm the player and reorder (if preferences exist) AFTER kits are applied.
-    //
-
+    // After respawn, let PGM apply kit, then reorder/apply arming
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        Player player = event.getPlayer();
-        // Delay 1 tick to ensure PGM applied the kit
-        Bukkit.getScheduler().runTask(plugin, () -> onAfterKitApplied(player));
+        final Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override
+            public void run() {
+                onAfterKitApplied(player);
+            }
+        });
     }
 
+    // On join, try to arm and reorder (safe no-op if kit not yet applied)
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        // Delay a bit as players can join as observers; harmless if nothing is applied yet
-        Bukkit.getScheduler().runTask(plugin, () -> onAfterKitApplied(player));
+        final Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override
+            public void run() {
+                onAfterKitApplied(player);
+            }
+        });
     }
 
     private void onAfterKitApplied(Player player) {
         if (SCOPE_DTM_ONLY && !isDTM(player.getWorld())) return;
 
         UUID id = player.getUniqueId();
-        // Arm the player to allow rearranging before the first content change
         state.arm(id);
 
         Map<ItemSignature, List<Integer>> prefs = store.getPreferences(id);
@@ -96,28 +102,18 @@ public class InvetorySorter implements Listener {
             if (match == null) return false;
             return match.getModule(DestroyableMatchModule.class) != null;
         } catch (Throwable t) {
-            // If PGM isn't present or API changed, fail open (treat as not DTM)
             return false;
         }
     }
 
-    //
-    // Content change detectors: snapshot layout BEFORE first actual content change happens.
-    // Inventory clicks alone are NOT listened to, so players can freely rearrange.
-    //
-
+    // Content-change detectors (Spigot 1.8-safe)
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         maybeSnapshot(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onItemDamage(PlayerItemDamageEvent event) {
-        maybeSnapshot(event.getPlayer());
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onConsume(PlayerItemConsumeEvent event) {
+    public void onBlockBreak(BlockBreakEvent event) {
         maybeSnapshot(event.getPlayer());
     }
 
@@ -127,23 +123,27 @@ public class InvetorySorter implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickup(PlayerPickupItemEvent event) {
+        maybeSnapshot(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBowShoot(EntityShootBowEvent event) {
-        if (event.getEntity() instanceof Player p) {
-            maybeSnapshot(p);
+        if (event.getEntity() instanceof Player) {
+            maybeSnapshot((Player) event.getEntity());
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
-        // Broad catch: many interactions cause consumption/durability/placement.
         maybeSnapshot(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Player p) {
-            // Armor durability may change; snapshot before that
-            maybeSnapshot(p);
+        if (event.getEntity() instanceof Player) {
+            // Armor durability may change on damage
+            maybeSnapshot((Player) event.getEntity());
         }
     }
 
@@ -159,47 +159,54 @@ public class InvetorySorter implements Listener {
         state.lock(id);
     }
 
-    //
-    // Core logic: build preferences and reorder on spawn
-    //
-
+    // Build preferences from current layout
     private Map<ItemSignature, List<Integer>> computePreferences(PlayerInventory inv) {
-        Map<ItemSignature, List<Integer>> map = new LinkedHashMap<>();
-        // main inventory + hotbar [0..35]
+        Map<ItemSignature, List<Integer>> map = new LinkedHashMap<ItemSignature, List<Integer>>();
         for (int slot = 0; slot <= 35; slot++) {
             ItemStack stack = inv.getItem(slot);
-            if (stack == null || stack.getType().isAir()) continue;
+            if (stack == null || stack.getType() == Material.AIR) continue;
             ItemSignature sig = ItemSignature.of(stack);
-            map.computeIfAbsent(sig, k -> new ArrayList<>()).add(slot);
+            List<Integer> list = map.get(sig);
+            if (list == null) {
+                list = new ArrayList<Integer>();
+                map.put(sig, list);
+            }
+            list.add(slot);
         }
         return map;
     }
 
+    // Reorder to preferences without changing content
     private void reorderToPreferences(PlayerInventory inv, Map<ItemSignature, List<Integer>> preferences) {
-        // Capture current items (0..35)
-        List<SlotItem> items = new ArrayList<>();
+        List<SlotItem> items = new ArrayList<SlotItem>();
         for (int slot = 0; slot <= 35; slot++) {
             ItemStack s = inv.getItem(slot);
-            if (s == null || s.getType().isAir()) continue;
+            if (s == null || s.getType() == Material.AIR) continue;
             items.add(new SlotItem(slot, s.clone(), ItemSignature.of(s)));
         }
 
-        // Queue by signature in current order
-        Map<ItemSignature, Deque<SlotItem>> bySig = new LinkedHashMap<>();
+        Map<ItemSignature, Deque<SlotItem>> bySig = new LinkedHashMap<ItemSignature, Deque<SlotItem>>();
         for (SlotItem it : items) {
-            bySig.computeIfAbsent(it.sig, k -> new ArrayDeque<>()).add(it);
+            Deque<SlotItem> q = bySig.get(it.sig);
+            if (q == null) {
+                q = new ArrayDeque<SlotItem>();
+                bySig.put(it.sig, q);
+            }
+            q.add(it);
         }
 
         ItemStack[] newLayout = new ItemStack[36];
         boolean[] occupied = new boolean[36];
 
-        // Place preferred items into preferred slots
+        // Place items in preferred target slots first
         for (Map.Entry<ItemSignature, List<Integer>> e : preferences.entrySet()) {
             ItemSignature sig = e.getKey();
             Deque<SlotItem> q = bySig.get(sig);
             if (q == null || q.isEmpty()) continue;
 
-            for (int target : e.getValue()) {
+            List<Integer> targets = e.getValue();
+            for (int i = 0; i < targets.size(); i++) {
+                int target = targets.get(i);
                 if (target < 0 || target > 35) continue;
                 if (q.isEmpty()) break;
                 if (occupied[target]) continue;
@@ -208,12 +215,13 @@ public class InvetorySorter implements Listener {
             }
         }
 
-        // Fill remaining slots with remaining items, preserving original order
-        List<Integer> freeSlots = new ArrayList<>();
+        // Fill remaining slots preserving original order
+        List<Integer> freeSlots = new ArrayList<Integer>();
         for (int i = 0; i <= 35; i++) if (!occupied[i]) freeSlots.add(i);
 
-        List<SlotItem> leftovers = new ArrayList<>();
-        for (Deque<SlotItem> q : bySig.values()) {
+        List<SlotItem> leftovers = new ArrayList<SlotItem>();
+        for (Map.Entry<ItemSignature, Deque<SlotItem>> e : bySig.entrySet()) {
+            Deque<SlotItem> q = e.getValue();
             while (!q.isEmpty()) leftovers.add(q.removeFirst());
         }
 
@@ -223,7 +231,6 @@ public class InvetorySorter implements Listener {
             newLayout[freeSlots.get(idx++)] = it.stack;
         }
 
-        // Apply back
         for (int slot = 0; slot <= 35; slot++) {
             inv.setItem(slot, newLayout[slot]);
         }
@@ -241,13 +248,10 @@ public class InvetorySorter implements Listener {
         }
     }
 
-    //
-    // Session state: armed until first content change, then locked
-    //
-
+    // Per-session arm/lock state
     private static final class SessionState {
-        private final Set<UUID> armed = new HashSet<>();
-        private final Set<UUID> locked = new HashSet<>();
+        private final Set<UUID> armed = new HashSet<UUID>();
+        private final Set<UUID> locked = new HashSet<UUID>();
 
         void arm(UUID id) {
             armed.add(id);
@@ -268,25 +272,19 @@ public class InvetorySorter implements Listener {
         }
     }
 
-    //
-    // ItemSignature: identifies "type of item" for reordering
-    //
-
+    // Signature of an item for reordering (1.8-safe)
     private static final class ItemSignature {
         private final Material material;
-        private final String potionKey; // base potion params if applicable
-        private final Integer customModelData;
+        private final String potionKey; // from Potion.fromItemStack for POTION/SPLASH_POTION
         private final String displayName;
         private final SortedMap<String, Integer> enchants;
 
         private ItemSignature(Material material,
                               String potionKey,
-                              Integer customModelData,
                               String displayName,
                               SortedMap<String, Integer> enchants) {
             this.material = material;
             this.potionKey = potionKey;
-            this.customModelData = customModelData;
             this.displayName = displayName;
             this.enchants = enchants;
         }
@@ -294,58 +292,72 @@ public class InvetorySorter implements Listener {
         static ItemSignature of(ItemStack stack) {
             Material mat = stack.getType();
             String potion = null;
-            Integer cmd = null;
             String name = null;
-            SortedMap<String, Integer> ench = new TreeMap<>();
+            SortedMap<String, Integer> ench = new TreeMap<String, Integer>();
+
+            // 1.8 potion parsing via Potion.fromItemStack
+            if (mat == Material.POTION) {
+                try {
+                    Potion p = Potion.fromItemStack(stack);
+                    if (p != null) {
+                        PotionType t = p.getType();
+                        potion = (t != null ? t.name() : "UNKNOWN")
+                                + ":lvl=" + p.getLevel()
+                                + ":ext=" + (p.hasExtendedDuration() ? "1" : "0")
+                                + ":splash=" + (p.isSplash() ? "1" : "0");
+                    }
+                } catch (Throwable ignored) {
+                    // leave potion null
+                }
+            }
 
             ItemMeta meta = stack.getItemMeta();
             if (meta != null) {
-                if (meta instanceof PotionMeta pm) {
-                    PotionData pd = pm.getBasePotionData();
-                    potion = pd.getType().name() + ":ext=" + pd.isExtended() + ":upg=" + pd.isUpgraded();
-                }
-                if (meta.hasCustomModelData()) {
-                    cmd = meta.getCustomModelData();
-                }
                 if (meta.hasDisplayName()) {
                     name = meta.getDisplayName();
                 }
                 Map<Enchantment, Integer> e = meta.getEnchants();
                 if (e != null && !e.isEmpty()) {
-                    for (var entry : e.entrySet()) {
-                        ench.put(entry.getKey().getKey().toString(), entry.getValue());
+                    for (Map.Entry<Enchantment, Integer> entry : e.entrySet()) {
+                        Enchantment enchKey = entry.getKey();
+                        String enchName = (enchKey != null && enchKey.getName() != null) ? enchKey.getName() : "UNK";
+                        ench.put(enchName, entry.getValue());
                     }
                 }
             }
-            return new ItemSignature(mat, potion, cmd, name, ench);
+
+            return new ItemSignature(mat, potion, name, ench);
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (!(o instanceof ItemSignature that)) return false;
-            return material == that.material
-                    && Objects.equals(potionKey, that.potionKey)
-                    && Objects.equals(customModelData, that.customModelData)
-                    && Objects.equals(displayName, that.displayName)
-                    && Objects.equals(enchants, that.enchants);
+            if (!(o instanceof ItemSignature)) return false;
+            ItemSignature that = (ItemSignature) o;
+            if (material != that.material) return false;
+            if (potionKey != null ? !potionKey.equals(that.potionKey) : that.potionKey != null) return false;
+            if (displayName != null ? !displayName.equals(that.displayName) : that.displayName != null) return false;
+            return enchants != null ? enchants.equals(that.enchants) : that.enchants == null;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(material, potionKey, customModelData, displayName, enchants);
+            int result = material != null ? material.hashCode() : 0;
+            result = 31 * result + (potionKey != null ? potionKey.hashCode() : 0);
+            result = 31 * result + (displayName != null ? displayName.hashCode() : 0);
+            result = 31 * result + (enchants != null ? enchants.hashCode() : 0);
+            return result;
         }
 
         @Override
         public String toString() {
             StringBuilder sb = new StringBuilder(material.name());
             if (potionKey != null) sb.append("|potion=").append(potionKey);
-            if (customModelData != null) sb.append("|cmd=").append(customModelData);
             if (displayName != null) sb.append("|name=").append(displayName.replace('|', '¦'));
-            if (!enchants.isEmpty()) {
+            if (enchants != null && !enchants.isEmpty()) {
                 sb.append("|ench=");
                 boolean first = true;
-                for (var e : enchants.entrySet()) {
+                for (Map.Entry<String, Integer> e : enchants.entrySet()) {
                     if (!first) sb.append(',');
                     sb.append(e.getKey()).append(':').append(e.getValue());
                     first = false;
@@ -358,14 +370,12 @@ public class InvetorySorter implements Listener {
             String[] parts = s.split("\\|");
             Material mat = Material.valueOf(parts[0]);
             String potion = null;
-            Integer cmd = null;
             String name = null;
-            SortedMap<String, Integer> ench = new TreeMap<>();
+            SortedMap<String, Integer> ench = new TreeMap<String, Integer>();
 
             for (int i = 1; i < parts.length; i++) {
                 String p = parts[i];
                 if (p.startsWith("potion=")) potion = p.substring("potion=".length());
-                else if (p.startsWith("cmd=")) cmd = Integer.valueOf(p.substring("cmd=".length()));
                 else if (p.startsWith("name=")) name = p.substring("name=".length());
                 else if (p.startsWith("ench=")) {
                     String list = p.substring("ench=".length());
@@ -374,36 +384,33 @@ public class InvetorySorter implements Listener {
                         for (String kv : kvs) {
                             String[] pair = kv.split(":");
                             if (pair.length == 2) {
-                                ench.put(pair[0], Integer.valueOf(pair[1]));
+                                try {
+                                    ench.put(pair[0], Integer.valueOf(pair[1]));
+                                } catch (NumberFormatException ignored) {}
                             }
                         }
                     }
                 }
             }
-            return new ItemSignature(mat, potion, cmd, name, ench);
+            return new ItemSignature(mat, potion, name, ench);
         }
     }
 
-    //
-    // Simple YAML-backed preference store (Bukkit YamlConfiguration, no external deps)
-    //
-
+    // Simple YAML-backed preference store (no external deps)
     private static final class PreferenceStore {
         private final File file;
-        private final Map<UUID, Map<ItemSignature, List<Integer>>> cache = new HashMap<>();
+        private final Map<UUID, Map<ItemSignature, List<Integer>>> cache = new HashMap<UUID, Map<ItemSignature, List<Integer>>>();
 
         PreferenceStore(File file) {
             this.file = file;
-            if (!file.getParentFile().exists()) {
-                // Ensure plugin data folder exists
-                file.getParentFile().mkdirs();
-            }
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
             load();
         }
 
         Map<ItemSignature, List<Integer>> getPreferences(UUID playerId) {
             Map<ItemSignature, List<Integer>> m = cache.get(playerId);
-            return m == null ? Collections.emptyMap() : m;
+            return m == null ? Collections.<ItemSignature, List<Integer>>emptyMap() : m;
         }
 
         void savePreferences(UUID playerId, Map<ItemSignature, List<Integer>> prefs) {
@@ -419,13 +426,15 @@ public class InvetorySorter implements Listener {
             for (String key : yml.getKeys(false)) {
                 try {
                     UUID id = UUID.fromString(key);
-                    Map<ItemSignature, List<Integer>> prefs = new LinkedHashMap<>();
+                    Map<ItemSignature, List<Integer>> prefs = new LinkedHashMap<ItemSignature, List<Integer>>();
 
-                    for (String sigKey : Objects.requireNonNull(yml.getConfigurationSection(key)).getKeys(false)) {
-                        String path = key + "." + sigKey;
-                        List<Integer> slots = yml.getIntegerList(path);
-                        ItemSignature sig = ItemSignature.fromString(sigKey);
-                        prefs.put(sig, new ArrayList<>(slots));
+                    if (yml.isConfigurationSection(key)) {
+                        for (String sigKey : yml.getConfigurationSection(key).getKeys(false)) {
+                            String path = key + "." + sigKey;
+                            List<Integer> slots = yml.getIntegerList(path);
+                            ItemSignature sig = ItemSignature.fromString(sigKey);
+                            prefs.put(sig, new ArrayList<Integer>(slots));
+                        }
                     }
                     cache.put(id, prefs);
                 } catch (IllegalArgumentException ignored) {
@@ -436,12 +445,12 @@ public class InvetorySorter implements Listener {
 
         private void save() {
             YamlConfiguration yml = new YamlConfiguration();
-            for (var entry : cache.entrySet()) {
+            for (Map.Entry<UUID, Map<ItemSignature, List<Integer>>> entry : cache.entrySet()) {
                 String id = entry.getKey().toString();
                 Map<ItemSignature, List<Integer>> prefs = entry.getValue();
-                for (var s : prefs.entrySet()) {
+                for (Map.Entry<ItemSignature, List<Integer>> s : prefs.entrySet()) {
                     String path = id + "." + s.getKey().toString();
-                    yml.set(path, new ArrayList<>(s.getValue()));
+                    yml.set(path, new ArrayList<Integer>(s.getValue()));
                 }
             }
             try {
@@ -452,9 +461,9 @@ public class InvetorySorter implements Listener {
         }
 
         private static Map<ItemSignature, List<Integer>> deepCopy(Map<ItemSignature, List<Integer>> src) {
-            Map<ItemSignature, List<Integer>> dst = new LinkedHashMap<>();
-            for (var e : src.entrySet()) {
-                dst.put(e.getKey(), new ArrayList<>(e.getValue()));
+            Map<ItemSignature, List<Integer>> dst = new LinkedHashMap<ItemSignature, List<Integer>>();
+            for (Map.Entry<ItemSignature, List<Integer>> e : src.entrySet()) {
+                dst.put(e.getKey(), new ArrayList<Integer>(e.getValue()));
             }
             return dst;
         }
