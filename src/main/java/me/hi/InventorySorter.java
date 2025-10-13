@@ -33,7 +33,7 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * InvetorySorter (Spigot 1.8.8 compatible)
+ * InventorySorter (Spigot 1.8.8 compatible)
  *
  * - Uses only Spigot-API 1.8.8 classes/methods.
  * - No Material#isAir, CustomModelData, or NamespacedKey APIs.
@@ -44,7 +44,7 @@ import java.util.*;
  * - Reapplies that layout after PGM applies kits (on respawn/join tick later).
  * - Only reorders; contents unchanged. Armor/offhand untouched (offhand doesn't exist in 1.8).
  */
-public class InvetorySorter implements Listener {
+public class InventorySorter implements Listener {
 
     private final JavaPlugin plugin;
 
@@ -54,7 +54,7 @@ public class InvetorySorter implements Listener {
     private final PreferenceStore store;
     private final SessionState state = new SessionState();
 
-    public InvetorySorter(JavaPlugin plugin) {
+    public InventorySorter(JavaPlugin plugin) {
         this.plugin = plugin;
         this.store = new PreferenceStore(new File(plugin.getDataFolder(), "inventory_prefs.yml"));
     }
