@@ -119,12 +119,14 @@ public class InventorySorter implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onMatchStart(MatchStartEvent event) {
         final World world = event.getMatch().getWorld();
-        // After kits apply on start, reapply ordering next tick
+        // After kits apply on start, reapply ordering next tick, THEN re-arm
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override
             public void run() {
                 for (Player p : world.getPlayers()) {
                     onAfterKitApplied(p);
+                    // CRITICAL FIX: Re-arm after applying layout so next change is captured
+                    state.arm(p.getUniqueId());
                 }
             }
         });
@@ -136,8 +138,10 @@ public class InventorySorter implements Listener {
         // On match finish/rotation, snapshot everyone's current layout so it survives into next map
         for (Player p : world.getPlayers()) {
             snapshotForRotation(p);
+            // CRITICAL FIX: Re-arm players AFTER snapshot so they can capture changes in next match
+            state.arm(p.getUniqueId());
         }
-        // Optionally: flush to disk immediately
+        // Flush to disk immediately to ensure data persists across rotation
         store.flush();
     }
 
@@ -220,6 +224,12 @@ public class InventorySorter implements Listener {
         UUID id = player.getUniqueId();
 
         if (SCOPE_DTM_ONLY && !isDTM(player.getWorld())) return;
+        
+        // DEFENSIVE FIX: If somehow not armed but also not locked, arm them
+        if (!state.isArmed(id) && !state.isLocked(id)) {
+            state.arm(id);
+        }
+        
         if (!state.isArmed(id) || state.isLocked(id)) return;
 
         PlayerInventory inv = player.getInventory();
